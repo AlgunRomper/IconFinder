@@ -19,6 +19,10 @@ class ViewController: UIViewController {
     private var activityIndicator: UIActivityIndicatorView!
     
     private var icons: [IconModel] = []
+    private var isLoading = false
+    private var searchService = IconSearchService()
+    private var currentQuery = ""
+    private var currentPage = 1
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -71,10 +75,13 @@ class ViewController: UIViewController {
         
         guard let query = searchTextField.text, !query.isEmpty else { return }
         
-        activityIndicator.startAnimating()
+        currentQuery = query
+        currentPage = 1
+        icons.removeAll()
+        collectionView.reloadData()
         
-        let iconService = IconSearchService()
-        iconService.searchIcons(query: query) { [weak self] (icons, error) in
+        activityIndicator.startAnimating()
+        searchService.searchIcons(query: query) { [weak self] (icons, error) in
             guard let self = self else { return }
             DispatchQueue.main.async {
                 self.activityIndicator.stopAnimating()
@@ -161,6 +168,34 @@ extension ViewController: UICollectionViewDelegateFlowLayout {
         return 16
     }
 }
+
+extension ViewController: UIScrollViewDelegate {
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        let offsetY = scrollView.contentOffset.y
+        let contentHeight = scrollView.contentSize.height
+        let frameHeight = scrollView.frame.size.height
+        
+        if offsetY > contentHeight - frameHeight * 2 {
+            guard !isLoading else { return }
+            isLoading = true
+            currentPage += 1
+            
+            searchService.loadNextPage(query: currentQuery) { [weak self] (icons, error) in
+                guard let self = self else { return }
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    if let error = error {
+                        print("Error fetching more icons: \(error)")
+                    } else if let newIcons = icons {
+                        self.icons.append(contentsOf: newIcons)
+                        self.collectionView.reloadData()
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 extension ViewController {
     func loadImage(from url: String, completion: @escaping (UIImage?) -> Void) {
